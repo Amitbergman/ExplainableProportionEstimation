@@ -271,7 +271,7 @@ class ExplainableMaximumLikelihoodCalculator:
         if ((min(subset_of_indexes) < 0) or max(subset_of_indexes) > self.number_of_reads):
             raise Exception("error - subset of indexes is problematic")
         ignore_indexes = [i for i in range(len(self.list_of_reads)) if i not in subset_of_indexes]
-        return self.estimate_species_proportions(ignore_list_indexes=ignore_indexes, result_resolution=result_resolution)
+        return self.estimate_proportions(ignore_list_indexes=ignore_indexes, result_resolution=result_resolution)
     
     def calc_all_likelihoods(self):
         results = []
@@ -287,12 +287,13 @@ class ExplainableMaximumLikelihoodCalculator:
         array = np.asarray(results)
         return pd.DataFrame(array, columns=["Sapiens alpha", "Neanderthal alpha", "Denisovan alpha", "likelihood"]).sort_values("likelihood", ascending=False, ignore_index=True)
 
+    # This method returns the value of the proportion estimation on the data
     #Result_resolution is how accurate we want to be, if result resolution is 10, the response will be
     #In multiplication of 0.1
     #If result resolution is 20, the result will be in mulitplications of 0.05
     #If result resolution is 100, the result will be in multiplications of 0.01
     #The higher it is, the slower the algorithm, but it is more accurate
-    def estimate_species_proportions(self, result_resolution=40,ignore_list_indexes=[]):
+    def estimate_proportions(self, result_resolution=40,ignore_list_indexes=[]):
         assert(len(ignore_list_indexes) < len(self.list_of_reads))
         array = np.zeros((1,3))
         features = ["Homo Sapiens", "Neanderthals", "Denisovans"]
@@ -348,6 +349,7 @@ class ExplainableMaximumLikelihoodCalculator:
         result[0][2] = max_alphas[2]
         return result
 
+    # This function is returning the estimation for the scaled Shaply values for a single data point.
     def estimate_shapley_value_for_read(self, read_index, number_of_samples_per_read):
         #print(colored(f"Start working on read number {read_index} in processId {os.getpid()}", "green"))
         possible_indexes = [i for i in range(self.number_of_reads) if i!= read_index]
@@ -369,6 +371,7 @@ class ExplainableMaximumLikelihoodCalculator:
         average_influence_not_scaled = np.mean(np.asarray(results_with_minus_without_not_scaled), axis=0)
         return (read_index, average_influence_scaled, average_influence_not_scaled)
 
+    # This function is estimating the scaled Shapley values for the input dataset
     def estimate_shapley_values(self, number_of_samples_per_read=200, number_of_jobs=-1, sample_to_run = []):
         #This will return for every species the influence of every read on the value of the model
         #For example, results[0][i] will be the influence of read i on "Sapiens" value of the result 
@@ -469,6 +472,7 @@ class ExplainableMaximumLikelihoodCalculator:
     
     #This treats every read in the sample as a feature, and finds the shap values of them
     #Meaning what is the contribution of each of the reads to the final result
+    # This method is using SHAP, to compare SHAP to our scaled Shapley values
     def calculate_shapley_values(self, nsamples=10000):
         
         all_zeros_sample = np.zeros((1,self.number_of_reads))
@@ -478,7 +482,7 @@ class ExplainableMaximumLikelihoodCalculator:
         shap_values = explainer.shap_values(all_ones_sample, nsamples=nsamples)
         return shap_values
     
-    def plot_shap_values(self, shap_values):
+    def plot_shapley_values(self, shap_values):
 
         print("summary plot:")
         sample = np.ones((1,self.number_of_reads))
@@ -537,7 +541,8 @@ class ExplainableMaximumLikelihoodCalculator:
         print(denisovans)
         return [sapienses, neanderthals, denisovans]
 
-    def analyze_diff_on_removing_reference(self, number_of_samples=20, size_of_sample = 10, result_resolution=50):
+    # This method is returning the refernce level explanation on a specific reference
+    def calculate_reference_influence(self, number_of_samples=20, size_of_sample = 10, result_resolution=50):
         indexes = [i for i in range(self.number_of_reads)]
         if (size_of_sample >= self.number_of_reads):
             size_of_sample = self.number_of_reads // 2
@@ -612,12 +617,12 @@ class ExplainableMaximumLikelihoodCalculator:
         #return the average influence of removing this reference        
         return np.mean(data, 0)
 
-    #Generate counter factual 1, given shapley influence values                
+    #Generate counter factual, given scaled Shapley influence values  
     def generateCounterFactualMinimalSetToRemoveAndChangeMax(self, influence_values):
         #current_maximizer = self.max_3_references()
         #calculate reads that are most influential against it
         #remove them one by one and while the maximum remains the same
-        current_max = self.estimate_species_proportions().values.argmax()
+        current_max = self.estimate_proportions().values.argmax()
         influence = influence_values[current_max][0]
         org = [(i, influence[i]) for i in range(self.number_of_reads)]
         s = sorted(org, key=lambda a:a[1], reverse=True)
@@ -627,7 +632,7 @@ class ExplainableMaximumLikelihoodCalculator:
         while(len(current_reads_to_ignore) < self.number_of_reads-1):
             current_reads_to_ignore.append(s[i][0])
             i+=1
-            max_likelihood = self.estimate_species_proportions(ignore_list_indexes=current_reads_to_ignore)
+            max_likelihood = self.estimate_proportions(ignore_list_indexes=current_reads_to_ignore)
             max_after = max_likelihood.values.argmax()
             if (max_after != current_max):
                 success = True
